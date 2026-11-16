@@ -109,6 +109,13 @@
   #scanErr b { color: var(--alarm); font-size: 18px; letter-spacing: .1em; }
   #scanErr span { font-size: 12px; opacity: .65; letter-spacing: .06em; }
   #scanErr svg { width: 46px; height: 46px; }
+  #scanErr.out { animation: fadeOut .35s forwards; }
+  @keyframes fadeOut { to { opacity: 0; transform: scale(.96); } }
+  #proto { display: none; flex-direction: column; gap: 12px; align-items: center; }
+  #proto.on { display: flex; }
+  #proto .p1 { color: var(--alarm); font-weight: 700; font-size: 15px; letter-spacing: .14em; text-transform: uppercase; opacity: 0; animation: blinkIn .5s forwards; }
+  #proto .p2 { font-size: 13px; letter-spacing: .14em; text-transform: uppercase; opacity: 0; animation: fade .3s .75s forwards; }
+  @keyframes blinkIn { 0%, 40% { opacity: 0; } 20%, 60%, 100% { opacity: 1; } }
   .flash { position: fixed; inset: 0; background: #fff; z-index: 40; pointer-events: none; animation: flash .5s ease-out forwards; }
   @keyframes flash { 0% { opacity: .95; } 100% { opacity: 0; } }
   .shard { position: fixed; z-index: 30; pointer-events: none; transition: transform 1s cubic-bezier(.1, .7, .3, 1), opacity 1s ease-in; }
@@ -140,6 +147,15 @@
     transform: scale(.4); opacity: 0;
   }
   #main.show #hamster { animation: zoom .55s cubic-bezier(.2, 1.6, .4, 1) forwards; }
+  /* Entrada estilo PowerPoint viejo: el fondo aparece y el hámster llega girando desde el centro */
+  #main.spin { z-index: 9; opacity: 0; animation: fade .25s forwards; }
+  #main.spin #hamster { animation: spinIn .9s cubic-bezier(.15, .7, .25, 1) .2s forwards; }
+  @keyframes spinIn {
+    from { transform: scale(0) rotate(-720deg); opacity: 0; }
+    15%  { opacity: 1; }
+    to   { transform: scale(1) rotate(0deg); opacity: 1; }
+  }
+  #main.show.spin .buttons { animation-delay: 1.25s; }
   @keyframes zoom { to { transform: scale(1); opacity: 1; } }
 
   .buttons {
@@ -229,6 +245,10 @@
     <div class="track" id="track"><i id="fill"></i></div>
   </div>
   <div id="pct">0%</div>
+  <div id="proto">
+    <div class="p1">Emergency protocol activated</div>
+    <div class="p2">Deploying hamster<span class="dots"></span></div>
+  </div>
   <div id="scanErr">
     <svg viewBox="0 0 100 90" aria-hidden="true">
       <path d="M50 4 L96 86 L4 86 Z" fill="none" stroke="#ff3b30" stroke-width="7" stroke-linejoin="round"/>
@@ -262,7 +282,7 @@
   // Ej. Francia: 33612345678   Argentina (móvil): 5491123456789   Italia: 393401234567
   const WHATSAPP = "5493416065000";
   // Mensaje que aparece ya escrito en WhatsApp:
-  const MENSAJE = "Vengo a reclamar mi beso (bajo amenaza de un hámster) 🐈";
+  const MENSAJE = "🐈 Vengo a reclamar mi beso (bajo amenaza de un hámster)!!";
 
   /* ===================================================== */
 
@@ -354,7 +374,17 @@
       document.getElementById('scanLabel').style.visibility = 'hidden';
       document.getElementById('scanErr').classList.add('on');
     }, t + 420);
-    setTimeout(showHamster, t + 2900);
+    setTimeout(() => {                       // el error se va...
+      document.getElementById('scanErr').classList.add('out');
+      pct.style.transition = 'opacity .35s'; pct.style.opacity = '0';
+    }, t + 2200);
+    setTimeout(() => {                       // ...y entra el protocolo de emergencia
+      document.getElementById('scanErr').style.display = 'none';
+      pct.style.display = 'none';
+      document.getElementById('proto').classList.add('on');
+      buzz(40);
+    }, t + 2600);
+    setTimeout(showHamster, t + 4700);
   }
 
   function explode() {
@@ -389,9 +419,9 @@
   }
 
   function showHamster() {
-    scan.classList.remove('on');
-    main.classList.add('show');
-    buzz(60);
+    main.classList.add('show', 'spin');      // el hámster entra girando
+    setTimeout(() => scan.classList.remove('on'), 400);
+    setTimeout(() => buzz(60), 1100);
   }
 
   /* ---------- Botón SÍ ---------- */
