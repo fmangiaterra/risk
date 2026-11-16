@@ -109,6 +109,17 @@
   #scanErr b { color: var(--alarm); font-size: 18px; letter-spacing: .1em; }
   #scanErr span { font-size: 12px; opacity: .65; letter-spacing: .06em; }
   #scanErr svg { width: 46px; height: 46px; }
+  .flash { position: fixed; inset: 0; background: #fff; z-index: 40; pointer-events: none; animation: flash .5s ease-out forwards; }
+  @keyframes flash { 0% { opacity: .95; } 100% { opacity: 0; } }
+  .shard { position: fixed; z-index: 30; pointer-events: none; transition: transform 1s cubic-bezier(.1, .7, .3, 1), opacity 1s ease-in; }
+  #pct.glitch { animation: glitch .5s steps(2) 1; }
+  @keyframes glitch {
+    0% { transform: translate(0); text-shadow: 3px 0 #f4ead9, -3px 0 #ff3b30; }
+    25% { transform: translate(-6px, 3px) skewX(-12deg); }
+    50% { transform: translate(5px, -4px) skewX(10deg); text-shadow: -4px 0 #f4ead9, 4px 0 #ff3b30; }
+    75% { transform: translate(-3px, 2px); }
+    100% { transform: translate(0); text-shadow: none; }
+  }
 
   /* ============ HAMSTER ============ */
   #main {
@@ -164,7 +175,7 @@
     transition: left .25s ease, top .25s ease, transform .25s ease;
     white-space: nowrap;
   }
-  #no.loose { position: fixed; z-index: 5; }
+  #no.loose { position: fixed; z-index: 5; background: rgba(244, 234, 217, .92); }
 
   #sent {
     position: fixed; inset: 0; display: none;
@@ -251,7 +262,7 @@
   // Ej. Francia: 33612345678   Argentina (móvil): 5491123456789   Italia: 393401234567
   const WHATSAPP = "5493416065000";
   // Mensaje que aparece ya escrito en WhatsApp:
-  const MENSAJE = "😘";
+  const MENSAJE = "Vengo a reclamar mi beso (bajo amenaza de un hámster) 🐈";
 
   /* ===================================================== */
 
@@ -314,33 +325,67 @@
     quiz.classList.remove('on');
     scan.classList.add('on');
 
-    // Sube normal hasta 100, duda un momento, y después se pasa.
+    // Sube normal hasta 100 y duda un momento.
     const steps = [
       [8, 260], [19, 220], [31, 260], [44, 200], [58, 240], [67, 300], [79, 220],
-      [87, 300], [94, 380], [99, 520], [100, 800],
-      [113, 140], [134, 120], [167, 110], [212, 100], [289, 90], [347, 90], [512, 90], [999, 600]
+      [87, 300], [94, 380], [99, 520], [100, 800]
     ];
+    // Después se pasa hasta un número al azar (distinto cada vez) y explota sin aviso.
+    const target = 140 + Math.floor(Math.random() * 240);   // entre 140 y 379
+    let v = 100;
+    while (v < target) {
+      v = Math.min(target, v + 6 + Math.floor(Math.random() * 30));
+      steps.push([v, 110 + Math.floor(Math.random() * 70)]);
+    }
+
     const trackW = track.clientWidth - 4;
     let t = 300;
-    steps.forEach(([v, wait]) => {
+    steps.forEach(([val, wait]) => {
       setTimeout(() => {
-        pct.textContent = v + '%';
-        fill.style.width = (trackW * Math.min(v, 420) / 100) + 'px'; // se sale de la barra
-        if (v > 100) {
-          track.classList.add('over'); pct.classList.add('over');
-          buzz(15);
-          if (v >= 289) shake(scan);
-        }
+        pct.textContent = val + '%';
+        fill.style.width = (trackW * Math.min(val, 420) / 100) + 'px'; // se sale de la barra
+        if (val > 100) { track.classList.add('over'); pct.classList.add('over'); }
       }, t);
       t += wait;
     });
+    t -= steps[steps.length - 1][1];      // explota en el mismo instante en que llega
+    setTimeout(explode, t + 40);
     setTimeout(() => {
-      buzz([80, 60, 160]);
-      shake(scan);
       document.getElementById('scanLabel').style.visibility = 'hidden';
       document.getElementById('scanErr').classList.add('on');
-    }, t);
-    setTimeout(showHamster, t + 2300);
+    }, t + 420);
+    setTimeout(showHamster, t + 2900);
+  }
+
+  function explode() {
+    buzz([120, 40, 220]);
+    const flash = document.createElement('div');
+    flash.className = 'flash';
+    document.body.appendChild(flash);
+    setTimeout(() => flash.remove(), 600);
+
+    // La barra se rompe en pedazos que salen volando.
+    const r = track.getBoundingClientRect();
+    const right = Math.min(window.innerWidth, r.left + fill.offsetWidth + 6);
+    for (let i = 0; i < 34; i++) {
+      const sh = document.createElement('div');
+      sh.className = 'shard';
+      const w = 5 + Math.random() * 16, h = 3 + Math.random() * 10;
+      sh.style.width = w + 'px'; sh.style.height = h + 'px';
+      sh.style.left = (r.left + Math.random() * (right - r.left)) + 'px';
+      sh.style.top = (r.top + Math.random() * r.height) + 'px';
+      sh.style.background = Math.random() < .65 ? 'var(--alarm)' : '#f4ead9';
+      document.body.appendChild(sh);
+      const ang = Math.random() * Math.PI * 2, dist = 120 + Math.random() * 320;
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        sh.style.transform = `translate(${Math.cos(ang) * dist}px, ${Math.sin(ang) * dist + 80}px) rotate(${Math.random() * 720 - 360}deg)`;
+        sh.style.opacity = '0';
+      }));
+      setTimeout(() => sh.remove(), 1300);
+    }
+    track.style.visibility = 'hidden';
+    shake(scan);
+    pct.classList.add('glitch');
   }
 
   function showHamster() {
@@ -372,7 +417,7 @@
   yes.addEventListener('click', sendKiss);
 
   /* ---------- Botón NO (se escapa) ---------- */
-  const noTexts = ['No', '¿Seguro?', 'Pensalo bien', 'El hámster está triste', 'No es una opción', 'Ok, me rindo'];
+  const noTexts = ['No', 'Excuse me??', 'Wrong button you fucker', 'Me ofendiste', 'U make the hamster cry', 'Llamando a mi abogado', 'Se acabó la democracia'];
   let tries = 0;
 
   let lastFlee = 0;
