@@ -178,9 +178,9 @@
   }
   #yes {
     background: var(--ink); color: #f4ead9;
-    font-size: 20px; padding: 14px 30px;
-    box-shadow: 6px 6px 0 rgba(27, 20, 16, .28);
-    transition: transform .12s ease, box-shadow .12s ease, font-size .2s ease;
+    font-size: 14px; padding: 11px 18px;      /* mismo tamaño que el No */
+    box-shadow: 4px 4px 0 rgba(27, 20, 16, .28);
+    transition: transform .12s ease, box-shadow .12s ease;
   }
   #yes:active { transform: translate(4px, 4px); box-shadow: 2px 2px 0 rgba(27, 20, 16, .28); }
   #yes.grow { animation: wiggle .45s ease; }
@@ -190,6 +190,11 @@
     font-size: 14px; padding: 11px 18px;
     transition: left .25s ease, top .25s ease, transform .25s ease;
     white-space: nowrap;
+  }
+  #back {
+    position: absolute; top: calc(14px + env(safe-area-inset-top)); left: 14px;
+    background: transparent; color: var(--ink); border-width: 2px;
+    font-size: 16px; padding: 4px 11px; letter-spacing: 0; opacity: .55;
   }
   #no.loose { position: fixed; z-index: 5; background: rgba(244, 234, 217, .92); }
 
@@ -262,6 +267,7 @@
 
 <!-- HÁMSTER -->
 <div id="main">
+  <button id="back" aria-label="Volver">←</button>
   <img id="hamster" src="hamster.jpg" alt="Hámster muy cerca de la cámara con el texto: Medas unbeso">
   <div class="buttons">
     <button id="yes">Sí</button>
@@ -279,70 +285,123 @@
      CONFIG — lo único que tenés que tocar
      ===================================================== */
   // Tu número en formato internacional, SOLO dígitos, sin "+", espacios ni ceros extra.
-  // Ej. Francia: 33612345678   Argentina (móvil): 5491123456789   Italia: 393401234567
   const WHATSAPP = "5493416065000";
   // Mensaje que aparece ya escrito en WhatsApp:
   const MENSAJE = "🐈 Vengo a reclamar mi beso (bajo amenaza de un hámster)!!";
+  // Volumen general de los sonidos (0 = mudo, 1 = máximo):
+  const VOLUMEN = 0.3;
 
   /* ===================================================== */
 
-  const lines = [
-    '<span class="red">⚠ ADVERTENCIA</span>'
-  ];
-  const log = document.getElementById('log');
-  const intro = document.getElementById('intro');
-  const main = document.getElementById('main');
-  let introDone = false;
-  const timers = [];
+  const $ = id => document.getElementById(id);
+  const later = [];                                   // timers que hay que poder cancelar al volver atrás
+  function after(ms, fn) { later.push(setTimeout(fn, ms)); }
+  function cancelAll() { later.forEach(clearTimeout); later.length = 0; }
+  function buzz(ms) { if (navigator.vibrate) { try { navigator.vibrate(ms); } catch (e) {} } }
+  function shake(el) { el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); }
 
-  lines.forEach((l, i) => timers.push(setTimeout(() => {
-    log.innerHTML += (i ? '<br>' : '') + l;
-  }, 250 + i * 850)));
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    document.getElementById('bar').style.width = '100%';
-  }));
-  timers.push(setTimeout(endIntro, 2100));
-  intro.addEventListener('click', endIntro);
+  /* =====================================================
+     SONIDOS — generados por el navegador, sin archivos
+     (solo suenan después del primer toque: es una regla de los navegadores)
+     ===================================================== */
+  let ac = null, master = null;
+  function audio() {
+    if (!ac) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      ac = new AC();
+      master = ac.createGain(); master.gain.value = VOLUMEN; master.connect(ac.destination);
+    }
+    if (ac.state === 'suspended') ac.resume();
+    return ac;
+  }
+  // Se "despierta" el audio con el primer toque en cualquier parte.
+  document.addEventListener('pointerdown', audio, { capture: true });
+
+  function tone(type, f0, f1, dur, vol = 1, delay = 0) {
+    const a = audio(); if (!a) return;
+    const t = a.currentTime + delay;
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(f0, t);
+    if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(master);
+    o.start(t); o.stop(t + dur + 0.05);
+  }
+  function noise(dur, filterType, f0, f1, vol = 1, delay = 0) {
+    const a = audio(); if (!a) return;
+    const t = a.currentTime + delay;
+    const buf = a.createBuffer(1, Math.ceil(a.sampleRate * dur), a.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    const src = a.createBufferSource(); src.buffer = buf;
+    const f = a.createBiquadFilter(); f.type = filterType;
+    f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    const g = a.createGain();
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f).connect(g).connect(master);
+    src.start(t); src.stop(t + dur);
+  }
+  const sfx = {
+    wrong()  { tone('square', 150, 120, 0.22, .55); tone('square', 120, 90, 0.42, .55, 0.24); },   // ERRR-ERRR
+    tick(v)  { v > 100 ? tone('square', 700 + v * 2, 700 + v * 2, 0.04, .22)                     // pitido que sube
+                       : tone('sine', 500 + v * 4, 500 + v * 4, 0.05, .35); },
+    boom()   { noise(1.1, 'lowpass', 3000, 60, 1); tone('sine', 120, 35, 0.6, .9); },             // explosión
+    alarm()  { [0, .22, .44, .66].forEach((d, i) => tone('square', i % 2 ? 660 : 880, i % 2 ? 660 : 880, 0.18, .25, d)); },
+    whoosh() { noise(0.9, 'bandpass', 300, 3500, .7); tone('sine', 250, 900, 0.8, .25); },        // fiuuu PowerPoint
+    boing()  { tone('sine', 260, 520, 0.12, .35); },                                               // el No se escapa
+    pop()    { tone('sine', 900, 280, 0.09, .6); tone('sine', 1200, 600, 0.08, .4, 0.12); }        // beso
+  };
+
+  /* =====================================================
+     Guardo cómo es cada pantalla al principio, para poder
+     dejarla como nueva cuando se vuelve atrás.
+     ===================================================== */
+  const fresh = { quiz: $('quiz').outerHTML, scan: $('scan').outerHTML, main: $('main').outerHTML };
+  function restore(id) { $(id).outerHTML = fresh[id]; }
+
+  /* ---------- Intro ---------- */
+  let introDone = false;
+  const introTimer = setTimeout(endIntro, 2100);
+  requestAnimationFrame(() => requestAnimationFrame(() => { $('bar').style.width = '100%'; }));
+  $('log').innerHTML = '<span class="red">⚠ ADVERTENCIA</span>';
+  $('intro').addEventListener('click', endIntro);
 
   function endIntro() {
     if (introDone) return;
     introDone = true;
-    timers.forEach(clearTimeout);
-    intro.classList.add('gone');
-    quiz.classList.add('on');
+    clearTimeout(introTimer);
+    $('intro').classList.add('gone');
+    history.replaceState({ s: 'quiz' }, '');
+    $('quiz').classList.add('on');
   }
 
-  function buzz(ms) { if (navigator.vibrate) { try { navigator.vibrate(ms); } catch (e) {} } }
-  function shake(el) { el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); }
-
   /* ---------- Pregunta: Are you pretty? ---------- */
-  const quiz = document.getElementById('quiz');
-  const qYes = document.getElementById('qYes');
-  const qNo = document.getElementById('qNo');
-
-  qNo.addEventListener('click', () => {
-    buzz([40, 40, 80]);
-    shake(quiz);
-    qNo.remove();                                   // a partir de acá solo queda "Yes"
-    document.getElementById('question').style.display = 'none';
-    document.getElementById('quizSub').textContent = 'Wrong answer';
-    document.getElementById('retort').classList.add('on');
-    qYes.textContent = 'Yes';
-    setTimeout(() => qYes.classList.add('pulse'), 600);
-  });
-  qYes.addEventListener('click', startScan);
+  function bindQuiz() {
+    const qYes = $('qYes'), qNo = $('qNo');
+    qNo.addEventListener('click', () => {
+      sfx.wrong();
+      buzz([40, 40, 80]);
+      shake($('quiz'));
+      qNo.remove();                                   // a partir de acá solo queda "Yes"
+      $('question').style.display = 'none';
+      $('quizSub').textContent = 'Wrong answer';
+      $('retort').classList.add('on');
+      after(600, () => qYes.classList.add('pulse'));
+    });
+    qYes.addEventListener('click', () => {
+      history.pushState({ s: 'scan' }, '');           // así "atrás" vuelve a la pregunta
+      startScan();
+    });
+  }
 
   /* ---------- Escáner de belleza ---------- */
-  const scan = document.getElementById('scan');
-  const fill = document.getElementById('fill');
-  const track = document.getElementById('track');
-  const pct = document.getElementById('pct');
-  let scanning = false;
-
   function startScan() {
-    if (scanning) return;
-    scanning = true;
-    quiz.classList.remove('on');
+    const scan = $('scan'), fill = $('fill'), track = $('track'), pct = $('pct');
+    $('quiz').classList.remove('on');
     scan.classList.add('on');
 
     // Sube normal hasta 100 y duda un momento.
@@ -360,34 +419,39 @@
 
     const trackW = track.clientWidth - 4;
     let t = 300;
-    steps.forEach(([val, wait]) => {
-      setTimeout(() => {
+    steps.forEach(([val, wait], i) => {
+      const last = i === steps.length - 1;
+      after(t, () => {
         pct.textContent = val + '%';
         fill.style.width = (trackW * Math.min(val, 420) / 100) + 'px'; // se sale de la barra
         if (val > 100) { track.classList.add('over'); pct.classList.add('over'); }
-      }, t);
+        if (!last) sfx.tick(val);
+      });
       t += wait;
     });
     t -= steps[steps.length - 1][1];      // explota en el mismo instante en que llega
-    setTimeout(explode, t + 40);
-    setTimeout(() => {
-      document.getElementById('scanLabel').style.visibility = 'hidden';
-      document.getElementById('scanErr').classList.add('on');
-    }, t + 420);
-    setTimeout(() => {                       // el error se va...
-      document.getElementById('scanErr').classList.add('out');
+    after(t + 40, explode);
+    after(t + 420, () => {
+      $('scanLabel').style.visibility = 'hidden';
+      $('scanErr').classList.add('on');
+    });
+    after(t + 2200, () => {                // el error se va...
+      $('scanErr').classList.add('out');
       pct.style.transition = 'opacity .35s'; pct.style.opacity = '0';
-    }, t + 2200);
-    setTimeout(() => {                       // ...y entra el protocolo de emergencia
-      document.getElementById('scanErr').style.display = 'none';
+    });
+    after(t + 2600, () => {                // ...y entra el protocolo de emergencia
+      $('scanErr').style.display = 'none';
       pct.style.display = 'none';
-      document.getElementById('proto').classList.add('on');
+      $('proto').classList.add('on');
+      sfx.alarm();
       buzz(40);
-    }, t + 2600);
-    setTimeout(showHamster, t + 4700);
+    });
+    after(t + 4700, () => showHamster(true));
   }
 
   function explode() {
+    const scan = $('scan'), fill = $('fill'), track = $('track'), pct = $('pct');
+    sfx.boom();
     buzz([120, 40, 220]);
     const flash = document.createElement('div');
     flash.className = 'flash';
@@ -418,17 +482,24 @@
     pct.classList.add('glitch');
   }
 
-  function showHamster() {
-    main.classList.add('show', 'spin');      // el hámster entra girando
-    setTimeout(() => scan.classList.remove('on'), 400);
-    setTimeout(() => buzz(60), 1100);
+  /* ---------- Hámster ---------- */
+  function showHamster(withSpin) {
+    history.replaceState({ s: 'hamster' }, '');     // "atrás" desde el hámster vuelve a la pregunta
+    const main = $('main');
+    if (withSpin) {
+      main.classList.add('show', 'spin');          // entra girando
+      sfx.whoosh();
+      after(400, () => $('scan').classList.remove('on'));
+      after(1100, () => buzz(60));
+    } else {
+      $('scan').classList.remove('on');
+      $('quiz').classList.remove('on');
+      main.classList.add('show');
+    }
   }
 
-  /* ---------- Botón SÍ ---------- */
-  const yes = document.getElementById('yes');
-  const no = document.getElementById('no');
-
   function sendKiss() {
+    sfx.pop();
     for (let i = 0; i < 14; i++) {
       const k = document.createElement('div');
       k.className = 'kiss';
@@ -439,63 +510,110 @@
       document.body.appendChild(k);
       setTimeout(() => k.remove(), 2200);
     }
-    document.getElementById('sent').style.display = 'flex';
-    setTimeout(() => {
+    $('sent').style.display = 'flex';
+    after(1100, () => {
       window.location.href = 'https://wa.me/' + WHATSAPP + '?text=' + encodeURIComponent(MENSAJE);
-    }, 1100);
+    });
   }
-  yes.addEventListener('click', sendKiss);
 
   /* ---------- Botón NO (se escapa) ---------- */
   const noTexts = ['No', 'Excuse me??', 'Wrong button you fucker', 'Me ofendiste', 'U make the hamster cry', 'Llamando a mi abogado', 'Se acabó la democracia'];
-  let tries = 0;
 
-  let lastFlee = 0;
-  function flee(e) {
-    if (e) e.preventDefault();
-    // En celular un toque dispara pointerdown y además un mouseenter emulado: contar uno solo.
-    const now = Date.now();
-    if (now - lastFlee < 350) return;
-    lastFlee = now;
-    tries++;
-    if (tries >= noTexts.length) {
-      // Se rinde: el "No" se convierte en "Sí".
-      no.textContent = 'Bueno, sí';
-      no.classList.remove('loose');
-      no.style.left = no.style.top = '';
-      no.removeEventListener('pointerdown', flee);
-      no.removeEventListener('mouseenter', flee);
-      // Pequeña pausa para que el mismo toque no lo dispare sin querer.
-      setTimeout(() => no.addEventListener('click', sendKiss), 450);
-      return;
+  function bindHamster() {
+    const yes = $('yes'), no = $('no');
+    let tries = 0, lastFlee = 0, noGap = null;
+
+    yes.addEventListener('click', sendKiss);
+    $('back').addEventListener('click', () => history.back());
+
+    function flee(e) {
+      if (e) e.preventDefault();
+      // En celular un toque dispara pointerdown y además un mouseenter emulado: contar uno solo.
+      const now = Date.now();
+      if (now - lastFlee < 350) return;
+      lastFlee = now;
+      if (!noGap) {
+        // Dejo un hueco invisible del tamaño original del No, así el Sí no se corre de lugar.
+        const r0 = no.getBoundingClientRect();
+        noGap = document.createElement('span');
+        noGap.style.cssText = `display:inline-block;width:${r0.width}px;height:${r0.height}px;visibility:hidden`;
+        no.after(noGap);
+      }
+      tries++;
+      if (tries >= noTexts.length) {
+        // Se rinde: el "No" se convierte en "Sí".
+        no.textContent = 'Bueno, sí';
+        no.classList.remove('loose');
+        if (noGap) { noGap.remove(); noGap = null; }
+        no.style.left = no.style.top = '';
+        no.removeEventListener('pointerdown', flee);
+        no.removeEventListener('mouseenter', flee);
+        // Pequeña pausa para que el mismo toque no lo dispare sin querer.
+        after(450, () => no.addEventListener('click', sendKiss));
+        return;
+      }
+      sfx.boing();
+      no.textContent = noTexts[tries];
+      yes.classList.remove('grow'); void yes.offsetWidth; yes.classList.add('grow');
+
+      const r = no.getBoundingClientRect();
+      const y = yes.getBoundingClientRect();
+      const pad = 16;
+      const maxX = window.innerWidth - r.width - pad;
+      const maxY = window.innerHeight - r.height - pad;
+      let x, t, guard = 0;
+      do {
+        x = pad + Math.random() * (maxX - pad);
+        t = pad + Math.random() * (maxY - pad);
+        guard++;
+      } while (guard < 30 && (
+        // no caer cerca del botón Sí ni muy cerca del dedo
+        (x < y.right + 60 && x + r.width > y.left - 60 && t < y.bottom + 60 && t + r.height > y.top - 60) ||
+        Math.hypot(x - r.left, t - r.top) < 120
+      ));
+      no.classList.add('loose');
+      no.style.left = x + 'px';
+      no.style.top = t + 'px';
     }
-    no.textContent = noTexts[tries];
-    yes.classList.remove('grow'); void yes.offsetWidth; yes.classList.add('grow');
-    yes.style.fontSize = (20 + tries * 2.5) + 'px';
-
-    const r = no.getBoundingClientRect();
-    const y = yes.getBoundingClientRect();
-    const pad = 16;
-    const maxX = window.innerWidth - r.width - pad;
-    const maxY = window.innerHeight - r.height - pad;
-    let x, t, guard = 0;
-    do {
-      x = pad + Math.random() * (maxX - pad);
-      t = pad + Math.random() * (maxY - pad);
-      guard++;
-    } while (guard < 30 && (
-      // no caer encima del botón Sí ni muy cerca del dedo
-      (x < y.right + 10 && x + r.width > y.left - 10 && t < y.bottom + 10 && t + r.height > y.top - 10) ||
-      Math.hypot(x - r.left, t - r.top) < 120
-    ));
-    no.classList.add('loose');
-    no.style.left = x + 'px';
-    no.style.top = t + 'px';
+    // pointerdown atrapa el toque antes del click (celular); mouseenter, el hover (compu).
+    no.addEventListener('pointerdown', flee);
+    no.addEventListener('mouseenter', flee);
+    no.addEventListener('click', e => { if (tries < noTexts.length) e.preventDefault(); });
   }
-  // pointerdown atrapa el toque antes del click (celular); mouseenter, el hover (compu).
-  no.addEventListener('pointerdown', flee);
-  no.addEventListener('mouseenter', flee);
-  no.addEventListener('click', e => { if (tries < noTexts.length) e.preventDefault(); });
+
+  /* =====================================================
+     VOLVER ATRÁS (gesto o botón "atrás" del celular)
+     ===================================================== */
+  function resetAll() {
+    cancelAll();
+    document.querySelectorAll('.shard, .flash, .kiss').forEach(el => el.remove());
+    $('sent').style.display = 'none';
+    restore('quiz'); restore('scan'); restore('main');
+    bindQuiz(); bindHamster();
+  }
+  window.addEventListener('popstate', e => {
+    const s = e.state && e.state.s;
+    if (!s) return;                                  // antes de la intro: deja que el navegador salga
+    if (!introDone) { introDone = true; clearTimeout(introTimer); $('intro').classList.add('gone'); }
+    resetAll();
+    if (s === 'quiz') $('quiz').classList.add('on');
+    else if (s === 'scan') startScan();
+    else if (s === 'hamster') showHamster(false);
+  });
+
+  // Al volver de WhatsApp, saco el cartel de "Beso enviado".
+  function hideSent() { $('sent').style.display = 'none'; }
+  window.addEventListener('pageshow', hideSent);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) hideSent(); });
+
+  bindQuiz();
+  bindHamster();
+
+  // Si la página se recarga al volver (por ejemplo desde WhatsApp), retomo donde estaba sin repetir la intro.
+  if (history.state && history.state.s === 'hamster') {
+    introDone = true; clearTimeout(introTimer); $('intro').classList.add('gone');
+    showHamster(false);
+  }
 </script>
 </body>
 </html>
