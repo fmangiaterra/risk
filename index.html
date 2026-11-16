@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#0a0a0a">
+<title>You've been warned.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /* ============ CONFIG VISUAL ============ */
+  :root {
+    --beige: #d8b48f;
+    --beige-dark: #c49d78;
+    --ink: #1b1410;
+    --alarm: #ff3b30;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+    background: #0a0a0a;
+    color: #fff;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* ============ INTRO ============ */
+  #intro {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 18px; padding: 24px;
+    background: #0a0a0a;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    z-index: 10;
+    transition: opacity .5s ease;
+  }
+  #intro.gone { opacity: 0; pointer-events: none; }
+  .warn {
+    width: 74px; height: 74px;
+    animation: pulse 0.9s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.08); opacity: .75; } }
+  #log { min-height: 5.4em; text-align: center; line-height: 1.8; font-size: 15px; letter-spacing: .04em; color: #e9e9e9; }
+  #log .red { color: var(--alarm); font-weight: 700; }
+  .bar { width: min(260px, 70vw); height: 4px; background: #222; border-radius: 4px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--alarm); transition: width 2.6s cubic-bezier(.3,.1,.2,1); }
+  .skip { position: absolute; bottom: calc(18px + env(safe-area-inset-bottom)); font-size: 11px; color: #555; letter-spacing: .1em; }
+
+  /* ============ PANTALLAS OSCURAS (pregunta + escáner) ============ */
+  .screen {
+    position: fixed; inset: 0;
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    gap: 28px; padding: 24px;
+    background: #0a0a0a; color: #f4ead9; text-align: center;
+    z-index: 8;
+    font-family: "Space Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  .screen.on { display: flex; animation: fade .35s forwards; opacity: 0; }
+  .q {
+    font-size: clamp(26px, 8vw, 40px); font-weight: 700;
+    letter-spacing: .08em; text-transform: uppercase; line-height: 1.25;
+  }
+  .sub { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; opacity: .55; }
+  .row { display: flex; gap: 14px; justify-content: center; align-items: center; min-height: 64px; }
+  .btn-solid, .btn-ghost { font-size: 18px; padding: 13px 30px; }
+  .btn-solid {
+    background: #f4ead9; color: #0a0a0a; border-color: #f4ead9;
+    box-shadow: 6px 6px 0 rgba(244, 234, 217, .22);
+    transition: transform .12s ease, box-shadow .12s ease;
+  }
+  .btn-solid:active { transform: translate(4px, 4px); box-shadow: 2px 2px 0 rgba(244, 234, 217, .22); }
+  .btn-ghost { background: transparent; color: #f4ead9; border-color: #f4ead9; }
+  .btn-solid.pulse { animation: beat 1s ease-in-out infinite; }
+  @keyframes beat { 0%,100% { transform: scale(1); } 50% { transform: scale(1.07); } }
+
+  #retort {
+    display: none;
+    font-size: clamp(22px, 7vw, 34px); font-weight: 700; line-height: 1.3;
+    max-width: 16ch;
+  }
+  #retort.on { display: block; animation: slam .35s cubic-bezier(.2, 1.8, .4, 1) forwards; }
+  #retort em { font-style: normal; color: var(--alarm); }
+  @keyframes slam { from { transform: scale(2.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+  .shake { animation: shake .45s ease !important; opacity: 1 !important; }
+  @keyframes shake {
+    10%, 90% { transform: translateX(-3px); } 20%, 80% { transform: translateX(6px); }
+    30%, 50%, 70% { transform: translateX(-12px); } 40%, 60% { transform: translateX(12px); }
+  }
+
+  /* Escáner */
+  .scan-label { font-size: 13px; letter-spacing: .16em; text-transform: uppercase; }
+  .scan-label .dots::after { content: ''; animation: dots 1s steps(4) infinite; }
+  @keyframes dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
+  .meter { width: min(280px, 72vw); display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
+  .track { position: relative; height: 22px; border: 2.5px solid #f4ead9; overflow: visible; }
+  .track i {
+    position: absolute; left: 2px; top: 2px; bottom: 2px; width: 0;
+    background: #f4ead9; transition: width .14s linear, background .2s;
+  }
+  .track.over i { background: var(--alarm); }
+  #pct { font-size: clamp(40px, 13vw, 64px); font-weight: 700; letter-spacing: .02em; font-variant-numeric: tabular-nums; }
+  #pct.over { color: var(--alarm); }
+  #scanErr { display: none; flex-direction: column; align-items: center; gap: 10px; }
+  #scanErr.on { display: flex; animation: slam .3s cubic-bezier(.2, 1.8, .4, 1) forwards; }
+  #scanErr b { color: var(--alarm); font-size: 18px; letter-spacing: .1em; }
+  #scanErr span { font-size: 12px; opacity: .65; letter-spacing: .06em; }
+  #scanErr svg { width: 46px; height: 46px; }
+
+  /* ============ HAMSTER ============ */
+  #main {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at 50% 35%, #e2c19f 0%, var(--beige) 45%, var(--beige-dark) 100%);
+    padding: calc(16px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));
+    gap: 22px;
+    visibility: hidden;
+  }
+  #main.show { visibility: visible; }
+  #hamster {
+    width: min(100%, 560px);
+    max-height: 62vh;
+    object-fit: contain;
+    border: 2.5px solid var(--ink);
+    box-shadow: 8px 8px 0 rgba(27, 20, 16, .28);
+    transform: scale(.4); opacity: 0;
+  }
+  #main.show #hamster { animation: zoom .55s cubic-bezier(.2, 1.6, .4, 1) forwards; }
+  @keyframes zoom { to { transform: scale(1); opacity: 1; } }
+
+  .buttons {
+    display: flex; gap: 14px; align-items: center; justify-content: center;
+    min-height: 64px; width: 100%;
+    opacity: 0;
+  }
+  #main.show .buttons { animation: fade .4s .7s forwards; }
+  @keyframes fade { to { opacity: 1; } }
+
+  button {
+    font-family: "Space Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    cursor: pointer;
+    border-radius: 0;
+    border: 2.5px solid var(--ink);
+    touch-action: manipulation;
+  }
+  #yes {
+    background: var(--ink); color: #f4ead9;
+    font-size: 20px; padding: 14px 30px;
+    box-shadow: 6px 6px 0 rgba(27, 20, 16, .28);
+    transition: transform .12s ease, box-shadow .12s ease, font-size .2s ease;
+  }
+  #yes:active { transform: translate(4px, 4px); box-shadow: 2px 2px 0 rgba(27, 20, 16, .28); }
+  #yes.grow { animation: wiggle .45s ease; }
+  @keyframes wiggle { 25% { transform: rotate(-2.5deg); } 75% { transform: rotate(2.5deg); } }
+  #no {
+    background: transparent; color: var(--ink);
+    font-size: 14px; padding: 11px 18px;
+    transition: left .25s ease, top .25s ease, transform .25s ease;
+    white-space: nowrap;
+  }
+  #no.loose { position: fixed; z-index: 5; }
+
+  #sent {
+    position: fixed; inset: 0; display: none;
+    align-items: center; justify-content: center; flex-direction: column; gap: 14px;
+    background: rgba(10, 10, 10, .92); color: #f4ead9; text-align: center; padding: 24px;
+    font-family: "Space Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 20px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+    z-index: 20;
+  }
+  #sent small { font-size: 12px; font-weight: 400; letter-spacing: .04em; text-transform: none; opacity: .65; max-width: 30ch; line-height: 1.6; }
+  .kiss {
+    position: fixed; pointer-events: none; font-size: 30px; z-index: 30;
+    animation: float 1.6s ease-out forwards;
+  }
+  @keyframes float { to { transform: translateY(-60vh) scale(1.6) rotate(20deg); opacity: 0; } }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  }
+</style>
+</head>
+<body>
+
+<!-- INTRO: dramatización breve. Tocar la pantalla la saltea. -->
+<div id="intro">
+  <svg class="warn" viewBox="0 0 100 90" aria-hidden="true">
+    <path d="M50 4 L96 86 L4 86 Z" fill="none" stroke="#ff3b30" stroke-width="7" stroke-linejoin="round"/>
+    <rect x="46" y="32" width="8" height="30" rx="3" fill="#ff3b30"/>
+    <circle cx="50" cy="73" r="5" fill="#ff3b30"/>
+  </svg>
+  <div id="log"></div>
+  <div class="bar"><i id="bar"></i></div>
+  <div class="skip">TOCÁ PARA SALTEAR</div>
+</div>
+
+<!-- PREGUNTA -->
+<div id="quiz" class="screen">
+  <div class="sub" id="quizSub">Question 1 of 1</div>
+  <div class="q" id="question">Are you pretty?</div>
+  <div id="retort">Of course you are, <em>dumbass.</em></div>
+  <div class="row">
+    <button id="qYes" class="btn-solid">Yes</button>
+    <button id="qNo" class="btn-ghost">No</button>
+  </div>
+</div>
+
+<!-- ESCÁNER -->
+<div id="scan" class="screen">
+  <div class="scan-label" id="scanLabel">Analyzing beauty level<span class="dots"></span></div>
+  <div class="meter">
+    <div class="track" id="track"><i id="fill"></i></div>
+  </div>
+  <div id="pct">0%</div>
+  <div id="scanErr">
+    <svg viewBox="0 0 100 90" aria-hidden="true">
+      <path d="M50 4 L96 86 L4 86 Z" fill="none" stroke="#ff3b30" stroke-width="7" stroke-linejoin="round"/>
+      <rect x="46" y="32" width="8" height="30" rx="3" fill="#ff3b30"/>
+      <circle cx="50" cy="73" r="5" fill="#ff3b30"/>
+    </svg>
+    <b>ERROR: VALUE OUT OF RANGE</b>
+    <span>Beauty level exceeds measurable limits.</span>
+  </div>
+</div>
+
+<!-- HÁMSTER -->
+<div id="main">
+  <img id="hamster" src="hamster.jpg" alt="Hámster muy cerca de la cámara con el texto: Medas unbeso">
+  <div class="buttons">
+    <button id="yes">Sí</button>
+    <button id="no">No</button>
+  </div>
+</div>
+
+<div id="sent">
+  <div>Beso enviado</div>
+  <small>(Si WhatsApp no se abrió, el hámster lo va a entregar en persona.)</small>
+</div>
+
+<script>
+  /* =====================================================
+     CONFIG — lo único que tenés que tocar
+     ===================================================== */
+  // Tu número en formato internacional, SOLO dígitos, sin "+", espacios ni ceros extra.
+  // Ej. Francia: 33612345678   Argentina (móvil): 5491123456789   Italia: 393401234567
+  const WHATSAPP = "5493416065000";
+  // Mensaje que aparece ya escrito en WhatsApp:
+  const MENSAJE = "😘";
+
+  /* ===================================================== */
+
+  const lines = [
+    '<span class="red">⚠ ADVERTENCIA</span>',
+    'Escaneaste igual.',
+    'Bueno. Vos te lo buscaste.'
+  ];
+  const log = document.getElementById('log');
+  const intro = document.getElementById('intro');
+  const main = document.getElementById('main');
+  let introDone = false;
+  const timers = [];
+
+  lines.forEach((l, i) => timers.push(setTimeout(() => {
+    log.innerHTML += (i ? '<br>' : '') + l;
+  }, 250 + i * 850)));
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    document.getElementById('bar').style.width = '100%';
+  }));
+  timers.push(setTimeout(endIntro, 3100));
+  intro.addEventListener('click', endIntro);
+
+  function endIntro() {
+    if (introDone) return;
+    introDone = true;
+    timers.forEach(clearTimeout);
+    intro.classList.add('gone');
+    quiz.classList.add('on');
+  }
+
+  function buzz(ms) { if (navigator.vibrate) { try { navigator.vibrate(ms); } catch (e) {} } }
+  function shake(el) { el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); }
+
+  /* ---------- Pregunta: Are you pretty? ---------- */
+  const quiz = document.getElementById('quiz');
+  const qYes = document.getElementById('qYes');
+  const qNo = document.getElementById('qNo');
+
+  qNo.addEventListener('click', () => {
+    buzz([40, 40, 80]);
+    shake(quiz);
+    qNo.remove();                                   // a partir de acá solo queda "Yes"
+    document.getElementById('question').style.display = 'none';
+    document.getElementById('quizSub').textContent = 'Wrong answer';
+    document.getElementById('retort').classList.add('on');
+    qYes.textContent = 'Yes';
+    setTimeout(() => qYes.classList.add('pulse'), 600);
+  });
+  qYes.addEventListener('click', startScan);
+
+  /* ---------- Escáner de belleza ---------- */
+  const scan = document.getElementById('scan');
+  const fill = document.getElementById('fill');
+  const track = document.getElementById('track');
+  const pct = document.getElementById('pct');
+  let scanning = false;
+
+  function startScan() {
+    if (scanning) return;
+    scanning = true;
+    quiz.classList.remove('on');
+    scan.classList.add('on');
+
+    // Sube normal hasta 100, duda un momento, y después se pasa.
+    const steps = [
+      [8, 260], [19, 220], [31, 260], [44, 200], [58, 240], [67, 300], [79, 220],
+      [87, 300], [94, 380], [99, 520], [100, 800],
+      [113, 140], [134, 120], [167, 110], [212, 100], [289, 90], [347, 90], [512, 90], [999, 600]
+    ];
+    const trackW = track.clientWidth - 4;
+    let t = 300;
+    steps.forEach(([v, wait]) => {
+      setTimeout(() => {
+        pct.textContent = v + '%';
+        fill.style.width = (trackW * Math.min(v, 420) / 100) + 'px'; // se sale de la barra
+        if (v > 100) {
+          track.classList.add('over'); pct.classList.add('over');
+          buzz(15);
+          if (v >= 289) shake(scan);
+        }
+      }, t);
+      t += wait;
+    });
+    setTimeout(() => {
+      buzz([80, 60, 160]);
+      shake(scan);
+      document.getElementById('scanLabel').style.visibility = 'hidden';
+      document.getElementById('scanErr').classList.add('on');
+    }, t);
+    setTimeout(showHamster, t + 2300);
+  }
+
+  function showHamster() {
+    scan.classList.remove('on');
+    main.classList.add('show');
+    buzz(60);
+  }
+
+  /* ---------- Botón SÍ ---------- */
+  const yes = document.getElementById('yes');
+  const no = document.getElementById('no');
+
+  function sendKiss() {
+    for (let i = 0; i < 14; i++) {
+      const k = document.createElement('div');
+      k.className = 'kiss';
+      k.textContent = ['💋','😘','❤️','🐹'][i % 4];
+      k.style.left = (10 + Math.random() * 80) + 'vw';
+      k.style.top = (60 + Math.random() * 30) + 'vh';
+      k.style.animationDelay = (Math.random() * .4) + 's';
+      document.body.appendChild(k);
+      setTimeout(() => k.remove(), 2200);
+    }
+    document.getElementById('sent').style.display = 'flex';
+    setTimeout(() => {
+      window.location.href = 'https://wa.me/' + WHATSAPP + '?text=' + encodeURIComponent(MENSAJE);
+    }, 1100);
+  }
+  yes.addEventListener('click', sendKiss);
+
+  /* ---------- Botón NO (se escapa) ---------- */
+  const noTexts = ['No', '¿Seguro?', 'Pensalo bien', 'El hámster está triste', 'No es una opción', 'Ok, me rindo'];
+  let tries = 0;
+
+  let lastFlee = 0;
+  function flee(e) {
+    if (e) e.preventDefault();
+    // En celular un toque dispara pointerdown y además un mouseenter emulado: contar uno solo.
+    const now = Date.now();
+    if (now - lastFlee < 350) return;
+    lastFlee = now;
+    tries++;
+    if (tries >= noTexts.length) {
+      // Se rinde: el "No" se convierte en "Sí".
+      no.textContent = 'Bueno, sí';
+      no.classList.remove('loose');
+      no.style.left = no.style.top = '';
+      no.removeEventListener('pointerdown', flee);
+      no.removeEventListener('mouseenter', flee);
+      // Pequeña pausa para que el mismo toque no lo dispare sin querer.
+      setTimeout(() => no.addEventListener('click', sendKiss), 450);
+      return;
+    }
+    no.textContent = noTexts[tries];
+    yes.classList.remove('grow'); void yes.offsetWidth; yes.classList.add('grow');
+    yes.style.fontSize = (20 + tries * 2.5) + 'px';
+
+    const r = no.getBoundingClientRect();
+    const y = yes.getBoundingClientRect();
+    const pad = 16;
+    const maxX = window.innerWidth - r.width - pad;
+    const maxY = window.innerHeight - r.height - pad;
+    let x, t, guard = 0;
+    do {
+      x = pad + Math.random() * (maxX - pad);
+      t = pad + Math.random() * (maxY - pad);
+      guard++;
+    } while (guard < 30 && (
+      // no caer encima del botón Sí ni muy cerca del dedo
+      (x < y.right + 10 && x + r.width > y.left - 10 && t < y.bottom + 10 && t + r.height > y.top - 10) ||
+      Math.hypot(x - r.left, t - r.top) < 120
+    ));
+    no.classList.add('loose');
+    no.style.left = x + 'px';
+    no.style.top = t + 'px';
+  }
+  // pointerdown atrapa el toque antes del click (celular); mouseenter, el hover (compu).
+  no.addEventListener('pointerdown', flee);
+  no.addEventListener('mouseenter', flee);
+  no.addEventListener('click', e => { if (tries < noTexts.length) e.preventDefault(); });
+</script>
+</body>
+</html>
