@@ -591,9 +591,20 @@
     }
     after(550, bubbleWipe);                                  // suben las burbujas...
     after(1750, () => $('sent').classList.add('on'));       // ...la pantalla queda bajo el agua
-    after(3000, () => {
-      window.location.href = 'https://wa.me/' + WHATSAPP + '?text=' + encodeURIComponent(MENSAJE);
-    });
+    after(3000, openWhatsApp);
+  }
+
+  function openWhatsApp() {
+    const text = encodeURIComponent(MENSAJE);
+    const web = 'https://wa.me/' + WHATSAPP + '?text=' + text;
+    const isPhone = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (!isPhone) { window.location.href = web; return; }
+    // En el celular abro la app directo: el link wa.me pasa por una página intermedia
+    // que en algunos teléfonos (por ejemplo iPhone) rompe los emojis y los muestra como "�".
+    window.location.href = 'whatsapp://send?phone=' + WHATSAPP + '&text=' + text;
+    // Si la app no se abrió (no está instalada), uso el link web como respaldo.
+    const fallback = setTimeout(() => { if (!document.hidden) window.location.href = web; }, 1800);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) clearTimeout(fallback); }, { once: true });
   }
 
   function bubbleWipe() {
