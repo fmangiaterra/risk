@@ -104,18 +104,7 @@
   .track.over i { background: var(--alarm); }
   #pct { font-size: clamp(40px, 13vw, 64px); font-weight: 700; letter-spacing: .02em; font-variant-numeric: tabular-nums; }
   #pct.over { color: var(--alarm); }
-  #scanErr { display: none; flex-direction: column; align-items: center; gap: 10px; }
-  #scanErr.on { display: flex; animation: slam .3s cubic-bezier(.2, 1.8, .4, 1) forwards; }
-  #scanErr b { color: var(--alarm); font-size: 18px; letter-spacing: .1em; }
-  #scanErr span { font-size: 12px; opacity: .65; letter-spacing: .06em; }
-  #scanErr svg { width: 46px; height: 46px; }
-  #scanErr.out { animation: fadeOut .35s forwards; }
-  @keyframes fadeOut { to { opacity: 0; transform: scale(.96); } }
-  #proto { display: none; flex-direction: column; gap: 12px; align-items: center; }
-  #proto.on { display: flex; }
-  #proto .p1 { color: var(--alarm); font-weight: 700; font-size: 15px; letter-spacing: .14em; text-transform: uppercase; opacity: 0; animation: blinkIn .5s forwards; }
-  #proto .p2 { font-size: 13px; letter-spacing: .14em; text-transform: uppercase; opacity: 0; animation: fade .3s .75s forwards; }
-  @keyframes blinkIn { 0%, 40% { opacity: 0; } 20%, 60%, 100% { opacity: 1; } }
+  #scan.fadeaway { transition: opacity .3s ease, transform .3s ease; opacity: 0 !important; transform: scale(.94); }
   .flash { position: fixed; inset: 0; background: #fff; z-index: 40; pointer-events: none; animation: flash .5s ease-out forwards; }
   @keyframes flash { 0% { opacity: .95; } 100% { opacity: 0; } }
   .shard { position: fixed; z-index: 30; pointer-events: none; transition: transform 1s cubic-bezier(.1, .7, .3, 1), opacity 1s ease-in; }
@@ -156,6 +145,8 @@
     to   { transform: scale(1) rotate(0deg); opacity: 1; }
   }
   #main.show.spin .buttons { animation-delay: 1.25s; }
+  #main.show.spin #back { opacity: 0; animation: backIn .4s 1.25s forwards; }
+  @keyframes backIn { to { opacity: .55; } }
   @keyframes zoom { to { transform: scale(1); opacity: 1; } }
 
   .buttons {
@@ -250,19 +241,6 @@
     <div class="track" id="track"><i id="fill"></i></div>
   </div>
   <div id="pct">0%</div>
-  <div id="proto">
-    <div class="p1">Emergency protocol activated</div>
-    <div class="p2">Deploying hamster<span class="dots"></span></div>
-  </div>
-  <div id="scanErr">
-    <svg viewBox="0 0 100 90" aria-hidden="true">
-      <path d="M50 4 L96 86 L4 86 Z" fill="none" stroke="#ff3b30" stroke-width="7" stroke-linejoin="round"/>
-      <rect x="46" y="32" width="8" height="30" rx="3" fill="#ff3b30"/>
-      <circle cx="50" cy="73" r="5" fill="#ff3b30"/>
-    </svg>
-    <b>ERROR: VALUE OUT OF RANGE</b>
-    <span>Beauty level exceeds measurable limits.</span>
-  </div>
 </div>
 
 <!-- HÁMSTER -->
@@ -289,7 +267,7 @@
   // Mensaje que aparece ya escrito en WhatsApp:
   const MENSAJE = "🐈 Vengo a reclamar mi beso (bajo amenaza de un hámster)!!";
   // Volumen general de los sonidos (0 = mudo, 1 = máximo):
-  const VOLUMEN = 0.6;
+  const VOLUMEN = 0.3;
 
   /* ===================================================== */
 
@@ -301,60 +279,123 @@
   function shake(el) { el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); }
 
   /* =====================================================
-     SONIDOS — generados por el navegador, sin archivos
-     (solo suenan después del primer toque: es una regla de los navegadores)
+     SONIDOS estilo concurso de TV viejo — generados por el navegador, sin archivos
      ===================================================== */
-  let ac = null, master = null;
+  function makeSfx(ctx, out) {
+    const T = (d = 0) => ctx.currentTime + 0.01 + d;
+    const noiseBuf = (() => {
+      const b = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate), d = b.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      return b;
+    })();
+    function nz(t, dur, { type = 'bandpass', f = 1000, q = 1, vol = .5, attack = .002 } = {}) {
+      const s = ctx.createBufferSource(); s.buffer = noiseBuf;
+      s.playbackRate.value = .9 + Math.random() * .2;
+      const fl = ctx.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + attack);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      s.connect(fl).connect(g).connect(out);
+      s.start(t, Math.random()); s.stop(t + dur + .02);
+      return fl;
+    }
+    function osc(t, type, f, dur, vol, { f1 = null, attack = .003 } = {}) {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = type; o.frequency.setValueAtTime(f, t);
+      if (f1) o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + attack);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g).connect(out); o.start(t); o.stop(t + dur + .02);
+    }
+    function bell(t, f, vol = .35, dur = 1.4) {        // campanita: parciales inarmónicos que se apagan
+      [[1, 1], [2.0, .5], [3.0, .25], [4.16, .18], [5.43, .1]].forEach(([r, a], i) =>
+        osc(t, 'sine', f * r, dur / (1 + i * .6), vol * a, { attack: .002 }));
+    }
+    return {
+      // Chicharra de respuesta incorrecta: dos serruchos desafinados, filtrados, cortos.
+      buzzer() {
+        const t = T(), g = ctx.createGain(), lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass'; lp.frequency.value = 1400;
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(.32, t + .015);
+        g.gain.setValueAtTime(.32, t + .5); g.gain.exponentialRampToValueAtTime(0.0001, t + .62);
+        [98, 104.5, 196.5].forEach(f => {
+          const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f;
+          o.connect(lp); o.start(t); o.stop(t + .65);
+        });
+        lp.connect(g).connect(out);
+      },
+      // Redoble de tambor que crece durante `dur` segundos.
+      drumroll(dur) {
+        const t0 = T(), step = .052;
+        for (let t = 0; t < dur; t += step) {
+          const p = t / dur, accent = (Math.round(t / step) % 2) ? .82 : 1;
+          const v = (.06 + .3 * p * p) * accent * (.85 + Math.random() * .3);
+          nz(t0 + t, .09, { type: 'bandpass', f: 2200, q: .7, vol: v });
+          osc(t0 + t, 'triangle', 190, .05, v * .5);
+        }
+      },
+      // Platillazo + bombo (la explosión).
+      crash() {
+        const t = T();
+        nz(t, 1.8, { type: 'highpass', f: 5200, q: .5, vol: .38, attack: .003 });
+        nz(t, .9, { type: 'bandpass', f: 3200, q: .8, vol: .25 });
+        osc(t, 'sine', 130, .45, .6, { f1: 42 });
+        nz(t, .12, { type: 'lowpass', f: 900, q: .5, vol: .32 });
+      },
+      // "Fiuu" suave + "ding" cuando el hámster aterriza.
+      reveal(landing = 1.1) {
+        const t = T();
+        const fl = nz(t, .75, { type: 'bandpass', f: 500, q: 1.2, vol: .18, attack: .25 });
+        fl.frequency.setValueAtTime(500, t); fl.frequency.exponentialRampToValueAtTime(2600, t + .7);
+        bell(T(landing), 1318.5, .3);                  // Mi6
+      },
+      // Toc de madera, discreto.
+      block() {
+        const t = T();
+        osc(t, 'sine', 820, .07, .32, { f1: 760, attack: .001 });
+        nz(t, .025, { type: 'bandpass', f: 2400, q: 4, vol: .15, attack: .001 });
+      },
+      // Botón Sí: "ta-dá" de órgano de programa viejo (acorde corto + acorde largo con vibrato).
+      correct() {
+        const chord = (t, notes, dur, vol) => notes.forEach(f => [[1, 1], [2, .5], [3, .25], [4, .12]].forEach(([h, a]) => {
+          const o = ctx.createOscillator(), g = ctx.createGain(), lfo = ctx.createOscillator(), lg = ctx.createGain();
+          o.type = 'sine'; o.frequency.value = f * h;
+          lfo.frequency.value = 6.2; lg.gain.value = f * h * .006; lfo.connect(lg).connect(o.frequency);
+          g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol * a, t + .02);
+          g.gain.setValueAtTime(vol * a, t + dur - .08); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+          o.connect(g).connect(out); o.start(t); o.stop(t + dur + .02); lfo.start(t); lfo.stop(t + dur + .02);
+        }));
+        chord(T(), [392, 523.3, 659.3], .14, .1);          // ta-
+        chord(T(.2), [523.3, 659.3, 784, 1046.5], .9, .1);  // -dá
+      }
+    };
+  }
+
+  // Audio en vivo. Todo pasa por un "bus" que se puede cortar de golpe al volver atrás.
+  let ac = null, master = null, bus = null, live = null;
   function audio() {
     if (!ac) {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return null;
       ac = new AC();
       master = ac.createGain(); master.gain.value = VOLUMEN; master.connect(ac.destination);
+      newBus();
     }
     if (ac.state === 'suspended') ac.resume();
     return ac;
   }
-  // Se "despierta" el audio con el primer toque en cualquier parte.
+  function newBus() {
+    if (!ac) return;
+    if (bus) { try { bus.disconnect(); } catch (e) {} }
+    bus = ac.createGain(); bus.connect(master);
+    live = makeSfx(ac, bus);
+  }
+  // Se "despierta" el audio con el primer toque en cualquier parte (regla de los navegadores).
   document.addEventListener('pointerdown', audio, { capture: true });
-
-  function tone(type, f0, f1, dur, vol = 1, delay = 0) {
-    const a = audio(); if (!a) return;
-    const t = a.currentTime + delay;
-    const o = a.createOscillator(), g = a.createGain();
-    o.type = type;
-    o.frequency.setValueAtTime(f0, t);
-    if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + dur);
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(vol, t + 0.01);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g).connect(master);
-    o.start(t); o.stop(t + dur + 0.05);
-  }
-  function noise(dur, filterType, f0, f1, vol = 1, delay = 0) {
-    const a = audio(); if (!a) return;
-    const t = a.currentTime + delay;
-    const buf = a.createBuffer(1, Math.ceil(a.sampleRate * dur), a.sampleRate);
-    const d = buf.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    const src = a.createBufferSource(); src.buffer = buf;
-    const f = a.createBiquadFilter(); f.type = filterType;
-    f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(f1, t + dur);
-    const g = a.createGain();
-    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    src.connect(f).connect(g).connect(master);
-    src.start(t); src.stop(t + dur);
-  }
-  const sfx = {
-    wrong()  { tone('square', 150, 120, 0.22, .55); tone('square', 120, 90, 0.42, .55, 0.24); },   // ERRR-ERRR
-    tick(v)  { v > 100 ? tone('square', 700 + v * 2, 700 + v * 2, 0.04, .22)                     // pitido que sube
-                       : tone('sine', 500 + v * 4, 500 + v * 4, 0.05, .35); },
-    boom()   { noise(1.1, 'lowpass', 3000, 60, 1); tone('sine', 120, 35, 0.6, .9); },             // explosión
-    alarm()  { [0, .22, .44, .66].forEach((d, i) => tone('square', i % 2 ? 660 : 880, i % 2 ? 660 : 880, 0.18, .25, d)); },
-    whoosh() { noise(0.9, 'bandpass', 300, 3500, .7); tone('sine', 250, 900, 0.8, .25); },        // fiuuu PowerPoint
-    boing()  { tone('sine', 260, 520, 0.12, .35); },                                               // el No se escapa
-    pop()    { tone('sine', 900, 280, 0.09, .6); tone('sine', 1200, 600, 0.08, .4, 0.12); }        // beso
-  };
+  // sfx.loQueSea() no hace nada si el audio todavía no arrancó.
+  const sfx = new Proxy({}, { get: (_, k) => (...args) => { if (audio() && live) live[k](...args); } });
 
   /* =====================================================
      Guardo cómo es cada pantalla al principio, para poder
@@ -383,7 +424,7 @@
   function bindQuiz() {
     const qYes = $('qYes'), qNo = $('qNo');
     qNo.addEventListener('click', () => {
-      sfx.wrong();
+      sfx.buzzer();
       buzz([40, 40, 80]);
       shake($('quiz'));
       qNo.remove();                                   // a partir de acá solo queda "Yes"
@@ -425,33 +466,19 @@
         pct.textContent = val + '%';
         fill.style.width = (trackW * Math.min(val, 420) / 100) + 'px'; // se sale de la barra
         if (val > 100) { track.classList.add('over'); pct.classList.add('over'); }
-        if (!last) sfx.tick(val);
       });
       t += wait;
     });
     t -= steps[steps.length - 1][1];      // explota en el mismo instante en que llega
+    sfx.drumroll((t + 40) / 1000);        // redoble que crece hasta la explosión
     after(t + 40, explode);
-    after(t + 420, () => {
-      $('scanLabel').style.visibility = 'hidden';
-      $('scanErr').classList.add('on');
-    });
-    after(t + 2200, () => {                // el error se va...
-      $('scanErr').classList.add('out');
-      pct.style.transition = 'opacity .35s'; pct.style.opacity = '0';
-    });
-    after(t + 2600, () => {                // ...y entra el protocolo de emergencia
-      $('scanErr').style.display = 'none';
-      pct.style.display = 'none';
-      $('proto').classList.add('on');
-      sfx.alarm();
-      buzz(40);
-    });
-    after(t + 4700, () => showHamster(true));
+    after(t + 650, () => scan.classList.add('fadeaway'));   // mini transición: se apaga el escáner...
+    after(t + 950, () => showHamster(true));                 // ...y entra el hámster girando
   }
 
   function explode() {
     const scan = $('scan'), fill = $('fill'), track = $('track'), pct = $('pct');
-    sfx.boom();
+    sfx.crash();
     buzz([120, 40, 220]);
     const flash = document.createElement('div');
     flash.className = 'flash';
@@ -488,7 +515,7 @@
     const main = $('main');
     if (withSpin) {
       main.classList.add('show', 'spin');          // entra girando
-      sfx.whoosh();
+      sfx.reveal(1.05);
       after(400, () => $('scan').classList.remove('on'));
       after(1100, () => buzz(60));
     } else {
@@ -499,7 +526,7 @@
   }
 
   function sendKiss() {
-    sfx.pop();
+    sfx.correct();
     for (let i = 0; i < 14; i++) {
       const k = document.createElement('div');
       k.className = 'kiss';
@@ -552,7 +579,7 @@
         after(450, () => no.addEventListener('click', sendKiss));
         return;
       }
-      sfx.boing();
+      sfx.block();
       no.textContent = noTexts[tries];
       yes.classList.remove('grow'); void yes.offsetWidth; yes.classList.add('grow');
 
@@ -586,6 +613,7 @@
      ===================================================== */
   function resetAll() {
     cancelAll();
+    newBus();
     document.querySelectorAll('.shard, .flash, .kiss').forEach(el => el.remove());
     $('sent').style.display = 'none';
     restore('quiz'); restore('scan'); restore('main');
