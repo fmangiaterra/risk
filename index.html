@@ -192,12 +192,55 @@
   #sent {
     position: fixed; inset: 0; display: none;
     align-items: center; justify-content: center; flex-direction: column; gap: 14px;
-    background: rgba(10, 10, 10, .92); color: #f4ead9; text-align: center; padding: 24px;
+    background: transparent; color: #fff; text-align: center; padding: 24px;
+    text-shadow: 0 2px 0 rgba(0, 40, 80, .35);
     font-family: "Space Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     font-size: 20px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
-    z-index: 20;
+    z-index: 30;
   }
-  #sent small { font-size: 12px; font-weight: 400; letter-spacing: .04em; text-transform: none; opacity: .65; max-width: 30ch; line-height: 1.6; }
+  #sent.on { display: flex; animation: fade .35s forwards; opacity: 0; justify-content: flex-end; padding-bottom: 20vh; }
+  #sent small { font-size: 12px; font-weight: 400; letter-spacing: .04em; text-transform: none; opacity: .8; max-width: 30ch; line-height: 1.6; }
+
+  /* ============ BURBUJAS (transición a WhatsApp) ============ */
+  #bubbles { position: fixed; inset: 0; z-index: 25; pointer-events: none; overflow: hidden; }
+  #bubbles .water {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 0;
+    background: linear-gradient(to bottom, #7fd3f5 0%, #3aa6e0 45%, #1c6fb3 100%);
+    transition: height 1s cubic-bezier(.55, 0, .35, 1);
+  }
+  #bubbles .water.full { height: 100%; }
+  .bubble {
+    position: absolute; border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, .75);
+    background: radial-gradient(circle at 32% 30%, rgba(255,255,255,.95) 0 7%, rgba(255,255,255,0) 9%),
+                radial-gradient(circle at 50% 50%, rgba(255,255,255,0) 55%, rgba(255,255,255,.35) 100%),
+                rgba(160, 225, 255, .18);
+    animation: rise var(--d) cubic-bezier(.35, 0, .55, 1) var(--delay) forwards;
+    opacity: 0;
+  }
+  .bubble.photo {
+    border: 3px solid rgba(255, 255, 255, .9);
+    background-size: cover; background-position: center;
+    box-shadow: inset 0 0 18px rgba(255, 255, 255, .55), 0 6px 18px rgba(0, 40, 90, .25);
+    animation: floatUp var(--d) cubic-bezier(.15, .65, .35, 1) var(--delay) forwards;
+    z-index: 2;
+  }
+  .bubble.photo::after {                         /* brillo de burbuja encima de la foto */
+    content: ''; position: absolute; inset: 0; border-radius: 50%;
+    background: radial-gradient(circle at 30% 26%, rgba(255,255,255,.85) 0 7%, rgba(255,255,255,0) 10%),
+                radial-gradient(circle at 50% 50%, rgba(255,255,255,0) 60%, rgba(200,240,255,.45) 100%);
+  }
+  @keyframes floatUp {
+    0%   { opacity: 0; transform: translate(0, 0) scale(.6) rotate(-8deg); }
+    10%  { opacity: 1; }
+    50%  { transform: translate(var(--dx), calc(-55vh - 130px)) scale(1) rotate(6deg); }
+    100% { opacity: 1; transform: translate(calc(var(--dx) * -1), calc(-100vh - 300px)) scale(1.05) rotate(-4deg); }
+  }
+  @keyframes rise {
+    0%   { opacity: 0; transform: translate(0, 0) scale(.5); }
+    12%  { opacity: 1; }
+    100% { opacity: 1; transform: translate(var(--dx), calc(-100vh - 260px)) scale(1.1); }
+  }
   .kiss {
     position: fixed; pointer-events: none; font-size: 30px; z-index: 30;
     animation: float 1.6s ease-out forwards;
@@ -253,6 +296,8 @@
   </div>
 </div>
 
+<div id="bubbles"></div>
+
 <div id="sent">
   <div>Beso enviado</div>
   <small>(Si WhatsApp no se abrió, el hámster lo va a entregar en persona.)</small>
@@ -267,7 +312,7 @@
   // Mensaje que aparece ya escrito en WhatsApp:
   const MENSAJE = "🐈 Vengo a reclamar mi beso (bajo amenaza de un hámster)!!";
   // Volumen general de los sonidos (0 = mudo, 1 = máximo):
-  const VOLUMEN = 0.8;
+  const VOLUMEN = 0.3;
 
   /* ===================================================== */
 
@@ -350,6 +395,13 @@
         const fl = nz(t, .75, { type: 'bandpass', f: 500, q: 1.2, vol: .18, attack: .25 });
         fl.frequency.setValueAtTime(500, t); fl.frequency.exponentialRampToValueAtTime(2600, t + .7);
         bell(T(landing), 1318.5, .3);                  // Mi6
+      },
+      // Blup-blup de burbujas.
+      bubbles(dur = 1.2, n = 16) {
+        for (let i = 0; i < n; i++) {
+          const d = Math.random() * dur, f = 280 + Math.random() * 520;
+          osc(T(d), 'sine', f, .07 + Math.random() * .05, .16 + Math.random() * .1, { f1: f * (1.8 + Math.random()), attack: .004 });
+        }
       },
       // Toc de madera, discreto.
       block() {
@@ -537,10 +589,45 @@
       document.body.appendChild(k);
       setTimeout(() => k.remove(), 2200);
     }
-    $('sent').style.display = 'flex';
-    after(1100, () => {
+    after(550, bubbleWipe);                                  // suben las burbujas...
+    after(1750, () => $('sent').classList.add('on'));       // ...la pantalla queda bajo el agua
+    after(3000, () => {
       window.location.href = 'https://wa.me/' + WHATSAPP + '?text=' + encodeURIComponent(MENSAJE);
     });
+  }
+
+  function bubbleWipe() {
+    const box = $('bubbles');
+    box.innerHTML = '<div class="water"></div>';
+    sfx.bubbles(1.3, 18);
+    buzz([20, 60, 20, 60, 20]);
+    const H = window.innerHeight;
+    for (let i = 0; i < 70; i++) {
+      const b = document.createElement('div');
+      b.className = 'bubble';
+      const size = 14 + Math.random() ** 2 * 130;            // muchas chicas, pocas grandes
+      b.style.width = b.style.height = size + 'px';
+      b.style.left = (Math.random() * 110 - 5) + 'vw';
+      b.style.top = (H + 20 + Math.random() * 160) + 'px';
+      b.style.setProperty('--d', (.9 + Math.random() * .8) + 's');
+      b.style.setProperty('--delay', (Math.random() * .7) + 's');
+      b.style.setProperty('--dx', (Math.random() * 80 - 40) + 'px');
+      box.appendChild(b);
+    }
+    // Burbujas especiales: el hámster y yo de bebé, más grandes y más lentas para que se vean.
+    [['hamster_burbuja.jpg', 6, 132, .05, -6], ['bebe.jpg', 58, 118, .3, 6]].forEach(([img, left, size, delay, dx]) => {
+      const b = document.createElement('div');
+      b.className = 'bubble photo';
+      b.style.backgroundImage = `url(${img})`;
+      b.style.width = b.style.height = size + 'px';
+      b.style.left = left + 'vw';
+      b.style.top = (H + 10) + 'px';
+      b.style.setProperty('--d', '3.2s');
+      b.style.setProperty('--delay', delay + 's');
+      b.style.setProperty('--dx', dx + 'px');
+      box.appendChild(b);
+    });
+    requestAnimationFrame(() => requestAnimationFrame(() => box.querySelector('.water').classList.add('full')));
   }
 
   /* ---------- Botón NO (se escapa) ---------- */
@@ -615,7 +702,8 @@
     cancelAll();
     newBus();
     document.querySelectorAll('.shard, .flash, .kiss').forEach(el => el.remove());
-    $('sent').style.display = 'none';
+    $('bubbles').innerHTML = '';
+    $('sent').classList.remove('on');
     restore('quiz'); restore('scan'); restore('main');
     bindQuiz(); bindHamster();
   }
@@ -630,9 +718,11 @@
   });
 
   // Al volver de WhatsApp, saco el cartel de "Beso enviado".
-  function hideSent() { $('sent').style.display = 'none'; }
+  function hideSent() { $('sent').classList.remove('on'); $('sent').style.display = ''; $('bubbles').innerHTML = ''; }
   window.addEventListener('pageshow', hideSent);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) hideSent(); });
+
+  ['bebe.jpg', 'hamster_burbuja.jpg'].forEach(src => { const i = new Image(); i.src = src; });
 
   bindQuiz();
   bindHamster();
