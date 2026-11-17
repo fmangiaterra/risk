@@ -187,6 +187,14 @@
     background: transparent; color: var(--ink); border-width: 2px;
     font-size: 16px; padding: 4px 11px; letter-spacing: 0; opacity: .55;
   }
+  #no.tease { animation: tease .7s ease; }
+  @keyframes tease {
+    0%, 100% { transform: rotate(0) scale(1); }
+    15% { transform: rotate(-9deg) scale(1.12); }
+    30% { transform: rotate(8deg) scale(1.12); }
+    45% { transform: rotate(-6deg) scale(1.08); }
+    60% { transform: rotate(4deg) scale(1.04); }
+  }
   #no.loose { position: fixed; z-index: 5; background: rgba(244, 234, 217, .92); }
 
   #sent {
@@ -299,8 +307,8 @@
 <div id="bubbles"></div>
 
 <div id="sent">
-  <div>Beso enviado</div>
-  <small>(Si WhatsApp no se abrió, el hámster lo va a entregar en persona.)</small>
+  <div id="sentTitle">Beso enviado</div>
+  <small id="sentNote">(Si WhatsApp no se abrió, el hámster lo va a entregar en persona.)</small>
 </div>
 
 <script>
@@ -577,7 +585,9 @@
     }
   }
 
-  function sendKiss() {
+  function sendKiss(fast) {
+    $('sentTitle').textContent = fast === true ? 'Eso fue rápido' : 'Beso enviado';
+    $('sentNote').textContent = (fast === true ? 'Beso enviado. ' : '') + '(Si WhatsApp no se abrió, el hámster lo va a entregar en persona.)';
     sfx.correct();
     for (let i = 0; i < 14; i++) {
       const k = document.createElement('div');
@@ -648,7 +658,7 @@
     const yes = $('yes'), no = $('no');
     let tries = 0, lastFlee = 0, noGap = null;
 
-    yes.addEventListener('click', sendKiss);
+    yes.addEventListener('click', () => sendKiss(tries === 0));   // Sí sin tocar nunca el No: "Eso fue rápido"
     $('back').addEventListener('click', () => history.back());
 
     function flee(e) {
@@ -667,6 +677,8 @@
       tries++;
       if (tries >= noTexts.length) {
         // Se rinde: el "No" se convierte en "Sí".
+        teaseT.forEach(clearTimeout);
+        no.classList.remove('tease');
         no.textContent = 'Bueno, sí';
         no.classList.remove('loose');
         if (noGap) { noGap.remove(); noGap = null; }
@@ -674,13 +686,19 @@
         no.removeEventListener('pointerdown', flee);
         no.removeEventListener('mouseenter', flee);
         // Pequeña pausa para que el mismo toque no lo dispare sin querer.
-        after(450, () => no.addEventListener('click', sendKiss));
+        after(450, () => no.addEventListener('click', () => sendKiss(false)));
         return;
       }
       sfx.block();
       no.textContent = noTexts[tries];
       yes.classList.remove('grow'); void yes.offsetWidth; yes.classList.add('grow');
 
+      moveNo();
+      tease();
+    }
+
+    // Lleva el No a un lugar al azar, lejos del Sí y del dedo.
+    function moveNo() {
       const r = no.getBoundingClientRect();
       const y = yes.getBoundingClientRect();
       const pad = 16;
@@ -699,6 +717,22 @@
       no.classList.add('loose');
       no.style.left = x + 'px';
       no.style.top = t + 'px';
+    }
+
+    // Si nadie lo toca, el No se burla: primero se sacude, y si siguen sin tocarlo, salta solo.
+    // Así la gente se da cuenta de que se puede seguir persiguiendo.
+    let teaseT = [];
+    function tease() {
+      teaseT.forEach(clearTimeout);
+      const alive = () => document.body.contains(no) && no.classList.contains('loose') && tries < noTexts.length;
+      const wiggle = () => { if (!alive()) return; no.classList.remove('tease'); void no.offsetWidth; no.classList.add('tease'); sfx.block(); };
+      teaseT = [
+        setTimeout(wiggle, 1000),                                                        // al segundo se sacude
+        setTimeout(() => { if (!alive()) return; moveNo(); sfx.block(); hop(); }, 3000)  // a los 3 s empieza a moverse
+      ];
+      function hop() {                                                                    // y sigue saltando cada 2 s
+        teaseT.push(setTimeout(() => { if (!alive()) return; moveNo(); sfx.block(); hop(); }, 2000));
+      }
     }
     // pointerdown atrapa el toque antes del click (celular); mouseenter, el hover (compu).
     no.addEventListener('pointerdown', flee);
